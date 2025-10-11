@@ -33,82 +33,83 @@ def _get_session() -> requests.Session:
     return _thread_local.session
 
 
-def download_image(image_link, savefolder):
+def download_image(image_link, sample_id, savefolder):
     """
-    Download a single image to the given folder.
-    Keeps the original filename from the URL path.
-    Skips download if file already exists and is non-empty.
+    Download a single image and save it as <sample_id>.jpg (or correct extension if found).
     """
     if not isinstance(image_link, str) or not image_link:
         return
 
     parsed = urlparse(image_link)
     if parsed.scheme not in ("http", "https"):
-        print(f"Warning: Unsupported URL scheme - {image_link}")
+        print(f"Warning: Unsupported URL scheme - {sample_id} {image_link}")
         return
 
-    # Derive a safe filename from the URL path
-    filename = unquote(os.path.basename(parsed.path)) or "image"
+    # Try to infer file extension from URL (default: .jpg)
+    ext = os.path.splitext(unquote(parsed.path))[-1].lower()
+    if not ext or len(ext) > 5:
+        ext = ".jpg"
+
+    # Final filename = sample_id + extension
+    filename = f"{sample_id}{ext}"
     image_save_path = os.path.join(savefolder, filename)
 
-    # Fast exit if already downloaded
+    # Skip if already downloaded and non-empty
     try:
         if os.path.exists(image_save_path) and os.path.getsize(image_save_path) > 0:
             return
     except OSError:
-        # If stat fails for any reason, attempt download anyway
         pass
 
     session = _get_session()
     try:
         with session.get(image_link, stream=True, timeout=(5, 20)) as resp:
             resp.raise_for_status()
-            # Ensure target dir exists (in case savefolder is nested)
             os.makedirs(savefolder, exist_ok=True)
             with open(image_save_path, "wb") as f:
                 for chunk in resp.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
     except Exception as ex:
-        print(f"Warning: Not able to download - {image_link}\n{ex}")
-        # Best-effort clean up partial files
+        print(f"Warning: Not able to download - {sample_id} {image_link}\n{ex}")
         try:
             if os.path.exists(image_save_path) and os.path.getsize(image_save_path) == 0:
                 os.remove(image_save_path)
         except OSError:
             pass
-    return
 
-def download_images(image_links, download_folder):
+
+def download_images(image_links, sample_ids, download_folder):
     """
-    Download many images concurrently using a thread pool (I/O-bound optimized).
-
+    Download many images concurrently using a thread pool.
+    Each image is saved using its corresponding sample_id.
+    
     Parameters:
-    - image_links: Iterable of image URLs (list, Series, etc.)
+    - image_links: Iterable of image URLs
+    - sample_ids: Iterable of sample IDs (same length as image_links)
     - download_folder: Destination folder path
     """
     os.makedirs(download_folder, exist_ok=True)
 
-    # Normalize and filter inputs quickly (avoid None/NaN/non-strings)
-    try:
-        # If it's a pandas Series, turn into list
-        image_links = list(image_links)
-    except TypeError:
-        # If it's already an iterator, this will fail only on non-iterables
-        image_links = []
+    if len(image_links) != len(sample_ids):
+        raise ValueError("image_links and sample_ids must have the same length")
 
-    urls = [u for u in image_links if isinstance(u, str) and u]
-    if not urls:
+    urls_and_ids = [
+        (u, sid)
+        for u, sid in zip(image_links, sample_ids)
+        if isinstance(u, str) and u
+    ]
+    if not urls_and_ids:
         return
 
-    # Choose a sensible default for I/O concurrency
-    cpu = os.cpu_count() /2
+    cpu = os.cpu_count() or 8
     max_workers = min(64, max(8, cpu * 5))
 
-    download_image_partial = partial(download_image, savefolder=download_folder)
-
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(download_image_partial, url) for url in urls]
+        futures = [
+            executor.submit(download_image, url, sid, download_folder)
+            for url, sid in urls_and_ids
+        ]
         for _ in tqdm(as_completed(futures), total=len(futures)):
             pass
     return
