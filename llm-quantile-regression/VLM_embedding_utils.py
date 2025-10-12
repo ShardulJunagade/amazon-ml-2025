@@ -7,15 +7,11 @@ similarity between embeddings.
 Default target model: "Qwen/Qwen2.5-VL-7B-Instruct"
 """
 
-from typing import List, Optional, Tuple, Union
-import os
-import matplotlib.pyplot as plt
+from typing import List, Optional, Tuple
 import logging
-import requests
 
 import numpy as np
 import torch
-from PIL import Image
 from tqdm import tqdm
 from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
