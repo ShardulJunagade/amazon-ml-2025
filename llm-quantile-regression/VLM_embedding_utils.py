@@ -105,7 +105,7 @@ def get_embeddings_from_dataset(dataset: List[dict], processor, model) -> List[t
                 "role": "user",
                 "content": [
                     {"type": "image", "url": image_path},
-                    {"type": "text", "text": text}
+                    {"type": "text", "text": "What is this product? What is it's quantity?" + text}
                 ]
             }
         ]
@@ -140,7 +140,7 @@ def get_embeddings_from_dataset(dataset: List[dict], processor, model) -> List[t
 # function to save embeddings to a file
 def save_embeddings(embeddings: List[torch.Tensor], filename: str):
     """Save embeddings to a file."""
-    torch.save(embeddings, filename)
+    np.save(embeddings, filename)
     logger.info("Saved embeddings to %s", filename)
 
 
